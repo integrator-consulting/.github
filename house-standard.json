@@ -1,0 +1,208 @@
+{
+  "standard": "integrator-consulting-house-standard",
+  "version": "0.2.0",
+  "published": "2026-09-08",
+  "review_by": "2026-12-07",
+  "review_interval_days": 100,
+  "source_of_truth": "repos/integrator-consulting/.github/contents/house-standard.json",
+
+  "check_grammar": {
+    "note": "Every check declares a `type`, an `evidence` label and its expectations. Unknown `type` → the preflight fails closed (exit 2). `expect` is ALL-OF over listed field/value pairs. `expect_any` is ONE-OF over listed objects (each object itself ALL-OF). When both are present, the result is expect AND expect_any. `composite.all` → every sub-check must pass; `composite.any` → at least one. A `manual` check always yields `cannot_evaluate` unless a recorded manual verification for its id is present and not past `next_due`, in which case it yields `manually_verified`.",
+    "evidence_labels": {
+      "settings-read": "A platform setting was read and compared. Proves the setting; not the behavior.",
+      "presence": "A file, directory or workflow element exists. Proves existence only.",
+      "content": "Inside a file matched a declared assertion. Proves the assertion; not the semantics.",
+      "manual": "A person must look and record that they did."
+    },
+    "statuses": ["pass", "missing", "drifted", "cannot_evaluate", "manually_verified", "exception_active", "exception_expired", "exception_unapproved", "not_applicable", "currency_unknown"],
+    "types": ["gh_api", "gh_api_each_repo", "gh_api_each_repo_status", "gh_api_branch_rules", "gh_api_files", "workflow_yaml", "file_exists_any", "file_exists_all", "file_min_content", "file_contains_all", "file_no_pattern", "tracked_files_absent", "gitignore_covers", "lockfile_pinned", "commitlint_config", "stamp", "composite", "manual"]
+  },
+
+  "exit_policy": {
+    "0": "every required item is pass, manually_verified (not past due), not_applicable, or exception_active (approved, unexpired); the standard's currency is known",
+    "1": "any required item is missing, drifted, cannot_evaluate, exception_expired or exception_unapproved; OR currency_unknown; OR the standard's review_by date has passed",
+    "2": "the standard could not be loaded, is empty, has an unknown check type, or the stamp is malformed",
+    "recommended_items": "never change the exit code; always appear in the report"
+  },
+
+  "tiers": {
+    "organization": [
+      { "id": "ORG-01", "title": "Two-factor authentication required", "severity": "required", "evidence": "settings-read",
+        "check": { "type": "gh_api", "path": "orgs/{org}", "expect": { "two_factor_requirement_enabled": true } } },
+
+      { "id": "ORG-02", "title": "Least-privilege member defaults", "severity": "required", "evidence": "settings-read",
+        "check": { "type": "gh_api", "path": "orgs/{org}",
+          "expect_any": [ { "default_repository_permission": "none" }, { "default_repository_permission": "read" } ],
+          "expect": { "members_can_create_public_repositories": false, "members_can_fork_private_repositories": false },
+          "permitted_creation_modes": "owners-only, or members may create private repositories only; members_can_create_private_repositories may be true or false; members_can_create_internal_repositories must be false where the field exists" } },
+
+      { "id": "ORG-03", "title": "Private by default; default branch main", "severity": "required", "evidence": "manual",
+        "check": { "type": "manual", "prompt": "Organization settings → Repository defaults: default branch is 'main'; new repositories default to private. Record date and who checked.", "verification_valid_days": 100 } },
+
+      { "id": "ORG-04", "title": "Default-branch ruleset reaches every repository", "severity": "required", "evidence": "settings-read",
+        "check": { "type": "composite", "all": [
+          { "type": "gh_api", "path": "orgs/{org}/rulesets", "expect_ruleset": { "target": "branch", "enforcement": "active", "rule_types_all_of": ["pull_request", "non_fast_forward", "deletion"] } },
+          { "type": "gh_api_each_repo", "path": "repos/{org}/{repo}/rules/branches/{default_branch}", "expect_rule_types_all_of": ["pull_request", "non_fast_forward", "deletion"], "exclusions_from": "applied.md exceptions with id ORG-04 naming the repository", "fail_if_any_repo_uncovered": true }
+        ] } },
+
+      { "id": "ORG-05", "title": "Dependabot alerts and security updates on every repository", "severity": "required", "evidence": "settings-read",
+        "check": { "type": "composite", "all": [
+          { "type": "gh_api", "path": "orgs/{org}", "expect": { "dependabot_alerts_enabled_for_new_repositories": true, "dependabot_security_updates_enabled_for_new_repositories": true } },
+          { "type": "gh_api_each_repo_status", "path": "repos/{org}/{repo}/vulnerability-alerts", "expect_status": 204, "meaning": "204 = alerts enabled for this repository; 404 = disabled", "fail_if_any_repo_disabled": true }
+        ] } },
+
+      { "id": "ORG-06", "title": "Secret scanning and push protection where the plan allows", "severity": "recommended", "evidence": "settings-read",
+        "check": { "type": "gh_api", "path": "orgs/{org}", "expect": { "secret_scanning_enabled_for_new_repositories": true, "secret_scanning_push_protection_enabled_for_new_repositories": true }, "on_unavailable": "cannot_evaluate" },
+        "relationship": "If this item is not pass, REPO-07 must be pass in every repository AND an approved exception for ORG-06 must exist in applied.md. The report states 'detection only — no push protection' when this condition holds." },
+
+      { "id": "ORG-07", "title": ".github repository with default files that have content", "severity": "required", "evidence": "content",
+        "check": { "type": "composite", "all": [
+          { "type": "gh_api_files", "path": "repos/{org}/.github/contents/{file}", "files": ["SECURITY.md", "CONTRIBUTING.md", "PULL_REQUEST_TEMPLATE.md", "HOUSE-STANDARD.md", "house-standard.json"], "min_bytes": 40 },
+          { "type": "file_contains_all", "source": "repos/{org}/.github/contents/SECURITY.md", "regex_all": ["[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"] , "meaning": "a working contact address is present" },
+          { "type": "manual", "prompt": "Confirm the organization's default files are visible from a private repository that has none of its own.", "verification_valid_days": 100 }
+        ] } },
+
+      { "id": "ORG-08", "title": "Access review within 100 days, recorded", "severity": "required", "evidence": "manual",
+        "check": { "type": "manual", "prompt": "Review members, outside collaborators, installed apps and tokens; look at the audit log; record date, who, and what changed in applied.md.", "verification_valid_days": 100, "requires_fields": ["verified_on", "verified_by", "changes"] } }
+    ],
+
+    "repository": [
+      { "id": "REPO-01", "title": "Private; default branch main; auto-delete head branches", "severity": "required", "evidence": "settings-read",
+        "check": { "type": "gh_api", "path": "repos/{org}/{repo}", "expect": { "private": true, "default_branch": "main", "delete_branch_on_merge": true } } },
+
+      { "id": "REPO-02", "title": "Default branch requires PR and the repository's own named checks", "severity": "required", "evidence": "settings-read",
+        "check": { "type": "composite", "all": [
+          { "type": "gh_api_branch_rules", "path": "repos/{org}/{repo}/rules/branches/{default_branch}", "expect_rule_types_all_of": ["pull_request", "non_fast_forward", "deletion", "required_status_checks"] },
+          { "type": "gh_api_branch_rules", "path": "repos/{org}/{repo}/rules/branches/{default_branch}", "expect_required_status_checks_include": "{stamp.required_checks}", "meaning": "every check named in the stamp is required on the default branch" },
+          { "type": "manual", "prompt": "If more than one person has write access, confirm one approving review is required (required_approving_review_count ≥ 1). With one maintainer, record that the human merge is the control.", "verification_valid_days": 100 }
+        ] } },
+
+      { "id": "REPO-03", "title": "Merge commits only", "severity": "required", "evidence": "settings-read",
+        "check": { "type": "gh_api", "path": "repos/{org}/{repo}", "expect": { "allow_merge_commit": true, "allow_squash_merge": false, "allow_rebase_merge": false } } },
+
+      { "id": "REPO-04", "title": "CI runs the gates as ordered steps on PR and push", "severity": "required", "evidence": "content",
+        "check": { "type": "workflow_yaml", "glob": ".github/workflows/*.yml",
+          "expect_triggers_all_of": ["pull_request", "push"], "expect_push_branches_include": "{default_branch}",
+          "expect_steps_in_order": "{stamp.gate_commands}", "meaning": "the repository declares its gate commands in the stamp (e.g. ['pnpm check','pnpm test','pnpm test:integration','pnpm build']); each must appear as its own step, in that order, in one job",
+          "forbid": { "continue-on-error": true }, "forbid_step_run_patterns": ["^echo\\b"], "job_names_must_match": "{stamp.required_checks}" } },
+
+      { "id": "REPO-05", "title": "Conventional lowercase commit subjects, enforced", "severity": "required", "evidence": "content",
+        "check": { "type": "commitlint_config", "paths": ["commitlint.config.js", "commitlint.config.cjs", "commitlint.config.mjs", ".commitlintrc", ".commitlintrc.json", ".commitlintrc.yml"],
+          "expect_rules_defined": ["subject-case", "type-enum"], "expect_invoked_in_workflow": { "glob": ".github/workflows/*.yml", "step_run_regex": "commitlint" } } },
+
+      { "id": "REPO-06", "title": "Required files with content", "severity": "required", "evidence": "content",
+        "check": { "type": "composite", "all": [
+          { "type": "file_min_content", "paths": ["README.md", "AGENTS.md", ".gitignore", ".env.example", ".house-standard.json"], "min_bytes": 40 },
+          { "type": "file_exists_any", "paths": ["LICENSE", "LICENSE.md", "OWNERSHIP.md"], "min_bytes": 40 },
+          { "type": "file_exists_any", "paths": ["CODEOWNERS", ".github/CODEOWNERS", "docs/CODEOWNERS"], "min_bytes": 3 },
+          { "type": "file_no_pattern", "path": ".env.example", "regex_none": ["^[A-Z0-9_]+=\\S+"], "meaning": "names only — no values" },
+          { "type": "file_exists_any", "paths": ["SECURITY.md", ".github/SECURITY.md"], "inheritable_from": "repos/{org}/.github/contents/SECURITY.md", "resolution_order": ["repository root", "repository .github/", "organization .github repository"] },
+          { "type": "file_exists_any", "paths": [".github/PULL_REQUEST_TEMPLATE.md", "PULL_REQUEST_TEMPLATE.md"], "inheritable_from": "repos/{org}/.github/contents/PULL_REQUEST_TEMPLATE.md", "resolution_order": ["repository .github/", "repository root", "organization .github repository"] }
+        ] } },
+
+      { "id": "REPO-07", "title": "No secret lands unnoticed; scanner is a required check", "severity": "required", "evidence": "content",
+        "check": { "type": "composite", "all": [
+          { "type": "tracked_files_absent", "patterns": [".env", ".env.*", "!.env.example", "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa*", "*.keystore"] },
+          { "type": "gitignore_covers", "patterns": [".env", ".env.*", "*.pem", "*.key"] },
+          { "type": "workflow_yaml", "glob": ".github/workflows/*.yml", "expect_step_uses_or_run_regex": "(gitleaks|trufflehog|secret-scan)", "forbid": { "continue-on-error": true }, "expect_job_in": "{stamp.required_checks}", "expect_history_depth": "fetch-depth: 0 on the scan job, or a documented depth in the stamp" },
+          { "type": "manual", "prompt": "Confirm the one-time history scan at adoption is recorded (date, tool, result) and any exposed credential was rotated (date). Record in the stamp's manual_verifications.", "verification_valid_days": 365, "requires_fields": ["verified_on", "verified_by", "tool", "result"] }
+        ] } },
+
+      { "id": "REPO-08", "title": "Pinned lockfile; scheduled dependency updates", "severity": "required", "evidence": "content",
+        "check": { "type": "composite", "all": [
+          { "type": "lockfile_pinned", "paths": ["pnpm-lock.yaml", "package-lock.json", "yarn.lock", "poetry.lock", "uv.lock", "requirements.txt"], "requirements_txt_rule": "every non-comment line contains '==' or a hash" },
+          { "type": "file_contains_all", "path": ".github/dependabot.yml", "regex_all": ["schedule:", "interval:\\s*(daily|weekly|monthly)"] }
+        ] } },
+
+      { "id": "REPO-09", "title": "Database changes only via committed migrations", "severity": "required", "evidence": "content",
+        "applies_when": { "type": "file_exists_any", "paths": ["drizzle.config.ts", "drizzle.config.js", "supabase/config.toml", "supabase", "prisma/schema.prisma", "alembic.ini", "knexfile.js", "schema.sql", "schema.prisma", "**/migrations/*.sql"] },
+        "check": { "type": "composite", "any": [
+          { "type": "file_exists_any", "paths": ["migrations/*.sql", "supabase/migrations/*.sql", "drizzle/migrations/*.sql", "drizzle/*.sql", "prisma/migrations/**/migration.sql", "alembic/versions/*.py"], "min_count": 1 },
+          { "type": "manual", "prompt": "Unrecognized database layout: attest that schema changes land only from committed migration files and name the path.", "verification_valid_days": 100 }
+        ] } },
+
+      { "id": "REPO-10", "title": "AGENTS.md carries the working conventions", "severity": "required", "evidence": "content",
+        "check": { "type": "composite", "all": [
+          { "type": "file_contains_all", "path": "AGENTS.md", "phrases_case_insensitive": ["verify before", "pull request", "one change", "scope", "not verified"] },
+          { "type": "manual", "prompt": "Read AGENTS.md: it must instruct (not merely mention) verify-before-acting, propose-before-changing, one change per verified step, stop at pull-request-open with a human merge, no unrequested scope, and 'not verified' never reported as passing.", "verification_valid_days": 100 }
+        ] } },
+
+      { "id": "REPO-11", "title": "Preflight present, stamped, required, reporting", "severity": "required", "evidence": "settings-read",
+        "check": { "type": "composite", "all": [
+          { "type": "file_exists_any", "paths": ["scripts/preflight.mjs", "scripts/preflight.js", "scripts/preflight.py"], "min_bytes": 400 },
+          { "type": "stamp", "path": ".house-standard.json", "schema": "stamp_schema", "compare_version_and_digest_to": "source_of_truth" },
+          { "type": "gh_api_branch_rules", "path": "repos/{org}/{repo}/rules/branches/{default_branch}", "expect_required_status_checks_include": ["preflight"] },
+          { "type": "workflow_yaml", "glob": ".github/workflows/*.yml", "expect_step_run_regex": "preflight", "expect_triggers_all_of": ["pull_request", "push", "schedule"], "expect_artifact_upload": true },
+          { "type": "gh_api", "path": "repos/{org}/{repo}/actions/artifacts", "expect_artifact_named_for_head": "preflight-report", "meaning": "a report artifact exists for the current head commit" }
+        ] } },
+
+      { "id": "REPO-12", "title": "Deployment verified by address and source commit, recorded", "severity": "recommended", "evidence": "manual",
+        "applies_when": { "type": "file_exists_any", "paths": ["vercel.json", ".vercel/project.json", "fly.toml", "render.yaml", "netlify.toml", "Procfile", "Dockerfile", ".github/workflows/*deploy*.yml"] },
+        "check": { "type": "manual", "prompt": "At each release: record the deployment address and its source SHA in the release notes; confirm they match the merged commit.", "verification_valid_days": 100, "requires_fields": ["verified_on", "address", "sha"] } }
+    ]
+  },
+
+  "stamp_schema": {
+    "$comment": "Validation schema for .house-standard.json in a repository (and for organization rows in applied.md). Unknown top-level properties are rejected.",
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["standard", "version", "digest", "applied_at", "applied_by", "tier", "required_checks", "gate_commands", "exceptions", "manual_verifications"],
+    "properties": {
+      "standard": { "const": "integrator-consulting-house-standard" },
+      "version": { "type": "string", "pattern": "^\\d+\\.\\d+\\.\\d+$" },
+      "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$", "$comment": "SHA-256 of the published house-standard.json this stamp was applied against" },
+      "applied_at": { "type": "string", "format": "date" },
+      "applied_by": { "type": "string", "minLength": 2 },
+      "tier": { "enum": ["repository", "organization"] },
+      "required_checks": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "$comment": "the CI job names that must be required on the default branch; must include 'preflight'" },
+      "gate_commands": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 }, "$comment": "ordered gate commands REPO-04 checks for, e.g. pnpm check, pnpm test, pnpm test:integration, pnpm build" },
+      "exceptions": { "type": "array", "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["id", "reason", "owner", "approved_by", "approved_on", "expires", "restore"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^(ORG|REPO)-\\d{2}$" },
+          "reason": { "type": "string", "minLength": 10 },
+          "owner": { "type": "string", "minLength": 2 },
+          "approved_by": { "type": "string", "minLength": 2, "$comment": "must be the CODEOWNERS maintainer (repository tier) or the organization owner (organization tier)" },
+          "approved_on": { "type": "string", "format": "date" },
+          "expires": { "type": "string", "format": "date", "$comment": "≤ 90 days after approved_on; validated by the preflight" },
+          "restore": { "type": "string", "minLength": 10 }
+        } } },
+      "manual_verifications": { "type": "array", "items": {
+        "type": "object", "additionalProperties": true,
+        "required": ["id", "verified_on", "verified_by", "next_due"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^(ORG|REPO)-\\d{2}$" },
+          "verified_on": { "type": "string", "format": "date" },
+          "verified_by": { "type": "string", "minLength": 2 },
+          "next_due": { "type": "string", "format": "date" },
+          "notes": { "type": "string" }
+        } } }
+    }
+  },
+
+  "escalation": {
+    "opens_review_when": [
+      "a required item is missing or disabled",
+      "a required item is drifted (present but not as required)",
+      "the stamp version or digest is older than / differs from the source of truth",
+      "the standard's currency is unknown (source of truth unreachable)",
+      "the standard's review_by date has passed",
+      "a required check returns cannot_evaluate",
+      "an exception is requested, lacks approval fields, or has expired",
+      "a manual verification is past next_due",
+      "a Dependabot alert of severity high or critical is open on a dependency named in this standard's own tooling (input: repos/{org}/{repo}/dependabot/alerts?state=open)"
+    ],
+    "review_item": {
+      "in_a_repository": "one GitHub issue per finding id, labeled house-standard, assigned to the CODEOWNERS maintainer; idempotent — skipped while an open issue for that id exists",
+      "in_the_organization_log": "a dated row in applied.md; the maintainer's own tracking system for anything beyond that"
+    },
+    "closing_a_review_item_requires": "one of: the fix (next preflight passes); an approved exception with expiry; a recorded manual verification with next_due; a proposed standard change (version bump). Closing without one of these is drift in disguise."
+  },
+
+  "report_contract": {
+    "summary_line": "\"{passed} automated checks passed; {manual} items need human verification; {findings} findings\" — never the word 'compliant'",
+    "provenance_fields": ["evaluated_at", "repository", "source_sha", "standard_version", "standard_digest", "source_of_truth_reachable", "token_scope_class"],
+    "per_check_fields": ["id", "title", "severity", "evidence", "status", "detail", "reproduction"]
+  }
+}
