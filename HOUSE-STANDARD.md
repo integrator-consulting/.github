@@ -1,6 +1,6 @@
 # Integrator Consulting House Standard
 
-**Version 0.1.1 · September 2026 · next review December 2026**
+**Version 0.3.0 · September 2026 · next review December 2026**
 
 This is how Integrator Consulting sets up and runs every code organization and every repository it operates — its own and those it builds for clients. Nothing here is proprietary. It is the ordinary discipline of a careful engineering shop, written down so that it is applied the same way every time and can be checked. This document travels with every repository we create.
 
@@ -29,7 +29,7 @@ This is how Integrator Consulting sets up and runs every code organization and e
 
 | id | requirement | why | verified |
 |---|---|---|---|
-| REPO-01 | Private by default; default branch `main`; branches are deleted automatically after merge | tidy history, no stale branches | auto |
+| REPO-01 | Private by default; default branch `main` | a client's repository is never public by accident, and one convention for the main line | auto |
 | REPO-02 | The default branch requires a pull request and requires **the repository's own named checks** (listed in its stamp) to pass; force-push and deletion are blocked. **A pull request is the review point, not proof of review:** while the repository has one maintainer, the human merge is the control and is stated as such; once a second member has write access, one approving review is required | nothing reaches the main line unreviewed or unchecked — and the standard says plainly which of those two it can guarantee | auto + manual |
 | REPO-03 | Merge commits only — squash and rebase merging are disabled | each verified step stays visible in history | auto |
 | REPO-04 | CI runs the project's quality gates **as separate, ordered steps** on every pull request and every push to the default branch; check names match REPO-02; no gate is marked to continue on error; **CI is the authority — a local pass proves nothing** | the same gates, every time, on neutral ground | auto (workflow read) |
@@ -41,6 +41,9 @@ This is how Integrator Consulting sets up and runs every code organization and e
 | REPO-10 | `AGENTS.md` states the working conventions for anyone — human or AI — changing the code: verify before acting; propose before changing; one change per verified step, committed; stop when the pull request opens — a human merges; do not add scope that was not asked for — park it and say so; report anything that could not be verified as *not verified*, never as passing. **A script can confirm the file is present and mentions these things; only a person can confirm it says them properly** | the same discipline whether the hands on the keyboard are a person's or an agent's | content + manual |
 | REPO-11 | A preflight check is present and is a **required check** on the default branch, runs monthly as well, and produces a **report artifact** for every run; the repository carries `.house-standard.json` recording the standard version and **digest** it was built to and the names of its required checks; a required item that is missing, drifted **or cannot be evaluated** fails the check | the standard is checked, not assumed — and when it moves, everything built to the old one says so | auto |
 | REPO-12 | Where the repository deploys: a deployment is verified by its address **and** its source commit, and that verification is **recorded** in the release notes | "deployed" means the right code is live | manual (recorded) |
+| REPO-13 | Head branches are deleted automatically after merge | tidy history, no stale branches | manual (recorded) |
+
+REPO-13 is checked by a person rather than by the script: the platform returns that setting only to a credential that can write to the repository, and the preflight runs read-only on purpose, so a person looks at the settings page and records the date.
 
 ## Exceptions
 
@@ -56,9 +59,10 @@ Some items are enforced by the platform once set (two-factor, permissions, branc
 
 ## Revision history
 
+- **0.3.0 (2026-09-14)** — REPO-01 split: `private` and `default_branch` stay an automated check; automatic deletion of head branches becomes REPO-13, verified by a person, because a read-only checker cannot see that setting.
 - **0.1.1 (2026-09-08)** — after an independent review: review distinguished from pull request (REPO-02); secret-scanning claim made honest, history scan and rotation added (REPO-07, ORG-06); exceptions gain approver and approval date (Exceptions); "quarterly" defined as 100 days (ORG-08, Versions); per-repository coverage for rulesets and dependency alerts (ORG-04, ORG-05); content checks for required files (REPO-06, REPO-08, REPO-09); stamp carries digest and required checks; required-but-unevaluable items fail (REPO-11); report language never says "compliant."
 - **0.1.0 (2026-09-07)** — first edition.
 
 ---
 
-*Integrator Consulting, LLC · House Standard 0.1.1 · Questions and proposed changes go to the maintainer named in `CODEOWNERS`.*
+*Integrator Consulting, LLC · House Standard 0.3.0 · Questions and proposed changes go to the maintainer named in `CODEOWNERS`.*

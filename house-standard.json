@@ -1,7 +1,7 @@
 {
   "standard": "integrator-consulting-house-standard",
-  "version": "0.2.0",
-  "published": "2026-09-08",
+  "version": "0.3.0",
+  "published": "2026-09-14",
   "review_by": "2026-12-07",
   "review_interval_days": 100,
   "source_of_truth": "repos/integrator-consulting/.github/contents/house-standard.json",
@@ -67,8 +67,8 @@
     ],
 
     "repository": [
-      { "id": "REPO-01", "title": "Private; default branch main; auto-delete head branches", "severity": "required", "evidence": "settings-read",
-        "check": { "type": "gh_api", "path": "repos/{org}/{repo}", "expect": { "private": true, "default_branch": "main", "delete_branch_on_merge": true } } },
+      { "id": "REPO-01", "title": "Private; default branch main", "severity": "required", "evidence": "settings-read",
+        "check": { "type": "gh_api", "path": "repos/{org}/{repo}", "expect": { "private": true, "default_branch": "main" } } },
 
       { "id": "REPO-02", "title": "Default branch requires PR and the repository's own named checks", "severity": "required", "evidence": "settings-read",
         "check": { "type": "composite", "all": [
@@ -138,7 +138,10 @@
 
       { "id": "REPO-12", "title": "Deployment verified by address and source commit, recorded", "severity": "recommended", "evidence": "manual",
         "applies_when": { "type": "file_exists_any", "paths": ["vercel.json", ".vercel/project.json", "fly.toml", "render.yaml", "netlify.toml", "Procfile", "Dockerfile", ".github/workflows/*deploy*.yml"] },
-        "check": { "type": "manual", "prompt": "At each release: record the deployment address and its source SHA in the release notes; confirm they match the merged commit.", "verification_valid_days": 100, "requires_fields": ["verified_on", "address", "sha"] } }
+        "check": { "type": "manual", "prompt": "At each release: record the deployment address and its source SHA in the release notes; confirm they match the merged commit.", "verification_valid_days": 100, "requires_fields": ["verified_on", "address", "sha"] } },
+
+      { "id": "REPO-13", "title": "Head branches are deleted automatically after merge", "severity": "required", "evidence": "manual",
+        "check": { "type": "manual", "prompt": "On the repository's Settings → General page, under Pull Requests, confirm 'Automatically delete head branches' is on. Record the date and who looked in the stamp's manual_verifications. The platform returns this setting only to a credential that can write to the repository, and the preflight deliberately runs read-only, so a person looks.", "verification_valid_days": 100, "requires_fields": ["verified_on", "verified_by"] } }
     ]
   },
 
